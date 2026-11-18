@@ -284,6 +284,28 @@ impl WeakDom {
         }
     }
 
+    /// Take every instance under `referent` out of its parent: each descendant
+    /// ends with no parent and no children, and `referent` with no children.
+    /// The instances stay in the DOM. One pass over the subtree, where
+    /// [`WeakDom::transfer_within`] passes over a child's siblings each time,
+    /// so emptying a parent of N children with it is N passes.
+    ///
+    /// ## Panics
+    /// Panics if `referent` does not refer to an instance in the DOM.
+    pub fn orphan_descendants(&mut self, referent: Ref) {
+        let root = self.instances.get_mut(&referent).unwrap_or_else(|| {
+            panic!("cannot orphan the descendants of an instance that does not exist")
+        });
+        let mut pending = std::mem::take(&mut root.children);
+
+        while let Some(child_ref) = pending.pop() {
+            if let Some(child) = self.instances.get_mut(&child_ref) {
+                child.parent = Ref::none();
+                pending.append(&mut child.children);
+            }
+        }
+    }
+
     /// Move the instance with the given referent to a new `WeakDom`, parenting
     /// it to the given ref. To move to within the same DOM, use
     /// [`WeakDom::transfer_within`].
@@ -601,6 +623,30 @@ impl CloneContext {
 
 #[cfg(test)]
 mod test {
+    #[test]
+    fn orphan_descendants() {
+        let mut dom = WeakDom::new(InstanceBuilder::new("DataModel"));
+        let folder = dom.insert(dom.root_ref(), InstanceBuilder::new("Folder"));
+        let model = dom.insert(folder, InstanceBuilder::new("Model").with_name("Kept"));
+        let part = dom.insert(model, InstanceBuilder::new("Part"));
+        let other = dom.insert(folder, InstanceBuilder::new("Part"));
+        let outside = dom.insert(dom.root_ref(), InstanceBuilder::new("Part"));
+
+        dom.orphan_descendants(folder);
+
+        // the instance itself stays where it is, with no children
+        assert_eq!(dom.get_by_ref(folder).unwrap().parent(), dom.root_ref());
+        assert!(dom.get_by_ref(folder).unwrap().children().is_empty());
+        assert_eq!(dom.root().children(), &[folder, outside]);
+        // everything under it is still in the DOM, alone
+        for referent in [model, part, other] {
+            let instance = dom.get_by_ref(referent).unwrap();
+            assert!(instance.parent().is_none());
+            assert!(instance.children().is_empty());
+        }
+        assert_eq!(dom.get_by_ref(model).unwrap().name, "Kept");
+    }
+
     use super::*;
 
     use crate::DomViewer;

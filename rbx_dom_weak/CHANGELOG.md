@@ -1,5 +1,8 @@
 # rbx_dom_weak Changelog
 
+## Unreleased (the `rbxsim` branch of toodols/rbx-dom)
+* Added `WeakDom::orphan_descendants`, which leaves every instance under one with no parent and no children in one pass over the subtree.
+
 ## Unreleased
 
 ## 4.2.0 (2026-07-01)
